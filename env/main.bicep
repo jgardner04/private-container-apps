@@ -3,6 +3,10 @@ targetScope = 'subscription'
 param vmVnetName string = 'vmVnet'
 param containerVnetName string = 'containerAppsVnet'
 param location string = 'westus3'
+param hubVnetName string = 'hubVnet'
+param hubVnetAddressPrefixs array = ['192.168.230.0/24']
+param hubFwName string = 'hub-fw'
+param firewallSbunetPrefix string = '192.168.230.0/26'
 param vmVnetAddressPrefixs array = ['192.168.200.0/24']
 param vmSubnetPrefixs string = '192.168.200.0/25'
 param containerVnetAddressPrefixs array = ['192.168.220.0/24']
@@ -22,6 +26,12 @@ resource vmRg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 resource containerAppRg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'container-apps-test-containers'
+  location: location
+  tags: tags
+}
+
+resource hubAppRg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+  name: 'container-apps-test-hub'
   location: location
   tags: tags
 }
@@ -49,7 +59,28 @@ module containerVnet './modules/networking/vnet.bicep' = {
   }
 }
 
+module hubVnet './modules/networking/vnet.bicep' = {
+  scope: resourceGroup(hubAppRg.name)
+  name: 'hubVnet'
+  params: {
+    name: hubVnetName
+    location: location
+    tags: tags
+    addressPrefixes: hubVnetAddressPrefixs
+  }
+}
+
 // Create the subnets
+module fwSubnet './modules/networking/subnet.bicep' = {
+  scope: resourceGroup(hubAppRg.name)
+  name: 'fwSubnet'
+  params: {
+    vnetName: hubFwName
+    subnetPrefixes: firewallSbunetPrefix
+    subnetName: 'firewall'
+  }
+}
+
 module vmSubnet './modules/networking/subnet.bicep' = {
   scope: resourceGroup(vmRg.name)
 
@@ -74,6 +105,7 @@ module containerSubnet './modules/networking/subnet.bicep' = {
   }
 }
 
+// Create vnet Peering
 module vmToContainerPeering 'modules/networking/peering.bicep' = {
   scope: resourceGroup(vmRg.name)
   dependsOn: [vmVnet, containerVnet]
