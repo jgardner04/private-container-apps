@@ -383,3 +383,4 @@ resource fw 'Microsoft.Network/azureFirewalls@2022-01-01' = {
 }
 
 output fwPip string = fw.properties.ipConfigurations[0].properties.privateIPAddress
+output fwName string = fw.name
