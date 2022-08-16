@@ -24,4 +24,5 @@ resource udr 'Microsoft.Network/routeTables@2020-06-01' = {
   }
 }
 
-output routeTableid string = udr.id
+output routeTableId string = udr.id
+output routeTableName string = udr.name
