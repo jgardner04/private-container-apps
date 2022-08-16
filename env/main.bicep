@@ -70,60 +70,125 @@ module hubVnet './modules/networking/vnet.bicep' = {
   }
 }
 
+// Create the firewall pip
+module hubFwPip './modules/networking/pip.bicep' = {
+  scope: resourceGroup(hubAppRg.name)
+  name: 'hubFwPip'
+  params: {
+    pipName: 'fwPip'
+    location: location
+    tags: tags
+  }
+}
+
+// Create firewall
+module hubFW './modules/networking/firewall.bicep' = {
+  scope: resourceGroup(hubAppRg.name)
+  dependsOn: [vmVnet]
+  name: hubFwName
+  params: {
+    fwName: 'container-apps-fw'
+    location: location
+    tags: tags
+    ipConfigurations: {
+      name: hubFwPip.outputs.pipName
+      properties: {
+        subnet: {
+          id: fwSubnet.outputs.subnetId
+        }
+        publicIPAddress: {
+          id: hubFwPip.outputs.pipId
+        }
+      }
+    }
+  }
+}
+
+// Create routetables
+// VM Routetable
+module vmRouteTable './modules/networking/routetable.bicep' = {
+  scope: resourceGroup(vmRg.name)
+  dependsOn: [hubFW]
+  name: 'vmRouteTable'
+  params: {
+    udrName: 'vm-rt'
+    udrRouteName: 'Default-route'
+    location: location
+    nextHopIpAddress: hubFW.outputs.fwPip
+  }
+}
+
+// Container Routetable
+module containerRouteTable './modules/networking/routetable.bicep' = {
+  scope: resourceGroup(containerAppRg.name)
+  dependsOn: [hubFW]
+  name: 'containerRouteTable'
+  params: {
+    udrName: 'container-rt'
+    udrRouteName: 'Default-route'
+    location: location
+    nextHopIpAddress: hubFW.outputs.fwPip
+  }
+}
+
 // Create the subnets
 module fwSubnet './modules/networking/subnet.bicep' = {
   scope: resourceGroup(hubAppRg.name)
+
+  dependsOn: [hubVnet]
   name: 'fwSubnet'
   params: {
-    vnetName: hubFwName
+    vnetName: 'hubVnet'
     subnetPrefixes: firewallSbunetPrefix
-    subnetName: 'firewall'
+    subnetName: 'AzureFirewallSubnet'
   }
 }
 
 module vmSubnet './modules/networking/subnet.bicep' = {
   scope: resourceGroup(vmRg.name)
 
-  dependsOn: [vmVnet]
+  dependsOn: [vmVnet, vmRouteTable]
   name: 'vmSubnet'
   params: {
     vnetName: vmVnetName
     subnetPrefixes: vmSubnetPrefixs
     subnetName: 'vms'
+    routeTableId: vmRouteTable.outputs.routeTableId
   }
 }
 
 module containerSubnet './modules/networking/subnet.bicep' = {
   scope: resourceGroup(containerAppRg.name)
 
-  dependsOn: [containerVnet]
+  dependsOn: [containerVnet, containerRouteTable]
   name: 'containerSubnet'
   params: {
     vnetName: containerVnetName
     subnetPrefixes: containerSubnetPrefixs
     subnetName: 'containers'
+    routeTableId: containerRouteTable.outputs.routeTableId
   }
 }
 
 // Create vnet Peering
-module vmToContainerPeering 'modules/networking/peering.bicep' = {
+module vmToHubPeering 'modules/networking/peering.bicep' = {
   scope: resourceGroup(vmRg.name)
-  dependsOn: [vmVnet, containerVnet]
-  name: 'vmToContainerPeering'
+  dependsOn: [vmVnet, hubVnet,]
+  name: 'vmToHubPeering'
   params: {
     localVnetName: vmVnetName
-    remoteVnetName: containerVnetName
-    remoteVnetID: containerVnet.outputs.vnetId
+    remoteVnetName: hubVnetName
+    remoteVnetID: hubVnet.outputs.vnetId
   }
 }
 
-module containerToVmPeering 'modules/networking/peering.bicep' = {
+module containerToHubPeering 'modules/networking/peering.bicep' = {
   scope: resourceGroup(containerAppRg.name)
-  dependsOn: [containerVnet, vmVnet]
-  name: 'containerToVmPeering'
+  dependsOn: [containerVnet, hubVnet,]
+  name: 'containerToHubPeering'
   params: {
     localVnetName: containerVnetName
-    remoteVnetName: vmVnetName
-    remoteVnetID: vmVnet.outputs.vnetId
+    remoteVnetName: hubVnetName
+    remoteVnetID: hubVnet.outputs.vnetId
   }
 }
